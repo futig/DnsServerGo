@@ -129,13 +129,13 @@ func (q *question) Encode() []byte {
 		}
 	}
 	buf.WriteByte(0x00)
-	buf.Write(intToBytes(uint16(q.QType)))
-	buf.Write(intToBytes(uint16(q.QClass)))
+	buf.Write(int16ToBytes(uint16(q.QType)))
+	buf.Write(int16ToBytes(uint16(q.QClass)))
 
 	return buf.Bytes()
 }
 
-func intToBytes(u uint16) []byte {
+func int16ToBytes(u uint16) []byte {
 	bytes := make([]byte, 2)
 	bytes[0] = byte(u >> 8)
 	bytes[1] = byte((u << 8) >> 8)
@@ -232,11 +232,21 @@ func readNameRecord(bufPointer *[]byte, pos int) (*[]byte, int) {
 }
 
 func parseIpv4(bufPointer *[]byte) string {
-
+	buf := *bufPointer
+	res := make([]string, 4)
+	for i, el := range buf {
+		res[i] = string(el)
+	}
+	return strings.Join(res, ".")
 }
 
 func parseIpv6(bufPointer *[]byte) string {
-
+	buf := *bufPointer
+	res := make([]string, )
+	for i, el := range buf {
+		res[i] = string(el)
+	}
+	return strings.Join(res, ".")
 }
 
 func parseMxRecord(bufPointer *[]byte) string {
@@ -269,14 +279,14 @@ func (a *answer) Encode() []byte {
 	}
 	rrBytes = append(rrBytes, 0x00)
 
-	rrBytes = append(rrBytes, intToBytes(uint16(a.Type))...)
-	rrBytes = append(rrBytes, intToBytes(uint16(a.Class))...)
+	rrBytes = append(rrBytes, int16ToBytes(uint16(a.Type))...)
+	rrBytes = append(rrBytes, int16ToBytes(uint16(a.Class))...)
 
 	time := make([]byte, 4)
 	binary.BigEndian.PutUint32(time, a.TTL)
 
 	rrBytes = append(rrBytes, time...)
-	rrBytes = append(rrBytes, intToBytes(a.Length)...)
+	rrBytes = append(rrBytes, int16ToBytes(a.Length)...)
 
 	ipBytes, err := net.IPv4(a.Data[0], a.Data[1], a.Data[2], a.Data[3]).MarshalText()
 	if err != nil {
