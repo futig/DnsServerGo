@@ -8,29 +8,30 @@ import (
 	"strings"
 )
 
-func parseRequest(bufPointer *[]byte, n int) (*header, *question, error) {
+func parseRequest(bufPointer *[]byte, n int) (*Request, error) {
 	header, err := readHeader(bufPointer, n)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if header.QDCount == 0 || header.QDCount > 1 {
-		return nil, nil, fmt.Errorf("Недопустимое число вопросов")
+		return nil, fmt.Errorf("Недопустимое число вопросов")
 	}
 	if header.OPCode != 0 {
-		return nil, nil, fmt.Errorf("Недопустимый тип запроса")
+		return nil, fmt.Errorf("Недопустимый тип запроса")
 	}
 	question, _ := readQuestion(bufPointer, 12)
-	return header, question, nil
+	request := &Request{
+		Header:   *header,
+		Question: *question,
+	}
+	return request, nil
 }
 
-func parseResponse(bufPointer *[]byte, n int) (
-	header *header, answers []*responseData, authorities []*responseData, additionals []*responseData, err error) {
-	header, err = readHeader(bufPointer, n)
+func parseResponse(bufPointer *[]byte, n int) (*Response, error) {
+	header, err := readHeader(bufPointer, n)
+	answers := make([])
 	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	if header.RCode != 0 {
-		return nil, nil, nil, nil, fmt.Errorf("Сервер не смог ответить на вопрос: %d", header.RCode)
+		return nil, err
 	}
 	_, pos := readQuestion(bufPointer, 12)
 	for range header.ANCount {
@@ -58,6 +59,14 @@ func parseResponse(bufPointer *[]byte, n int) (
 		additionals = append(answers, data)
 	}
 	err = nil
+	return
+}
+
+func (r *Request) encode() *[]byte {
+	return
+}
+
+func (r *Response) encode() *[]byte {
 	return
 }
 
@@ -108,7 +117,7 @@ func readQuestion(bufPointer *[]byte, start int) (*question, int) {
 	questionClass := binary.BigEndian.Uint16(buf[start+2 : start+4])
 
 	q := question{
-		QName:  parseNameRecord(questionName),
+		QName:  questionName,
 		QType:  questionType,
 		QClass: questionClass,
 	}
@@ -167,7 +176,7 @@ func readResponseData(bufPointer *[]byte, start int) (*responseData, int, error)
 	}
 
 	d := responseData{
-		Name:       parseNameRecord(name),
+		Name:       name,
 		Type:       rType,
 		Class:      rClass,
 		TTL:        timeToLive,
@@ -232,6 +241,7 @@ func readNameRecord(bufPointer *[]byte, pos int) (*[]byte, int) {
 }
 
 func parseIpv4(bufPointer *[]byte) string {
+
 	buf := *bufPointer
 	res := make([]string, 4)
 	for i, el := range buf {
@@ -242,15 +252,20 @@ func parseIpv4(bufPointer *[]byte) string {
 
 func parseIpv6(bufPointer *[]byte) string {
 	buf := *bufPointer
-	res := make([]string, )
-	for i, el := range buf {
-		res[i] = string(el)
+	res := make([]string, 8)
+	for i := 0; i < 16; i += 2 {
+		part := uint16(buf[i])<<8 | uint16(buf[i+1])
+		res[i] = string(part)
 	}
 	return strings.Join(res, ".")
 }
 
-func parseMxRecord(bufPointer *[]byte) string {
-
+func parseMxRecord(bufPointer *[]byte) (int, string) {
+	buf := *bufPointer
+	priority := uint16(buf[0])<<8 | uint16(buf[1])
+	bufName := buf[2:]
+	name := parseNameRecord(&bufName)
+	return int(priority), name
 }
 
 func parseNameRecord(bufPointer *[]byte) string {
@@ -265,35 +280,35 @@ func parseNameRecord(bufPointer *[]byte) string {
 	return strings.Join(nameParts, ".")
 }
 
-func (a *answer) Encode() []byte {
-	var rrBytes []byte
+func (a *responseData) Encode() []byte {
+	var rawData []byte
 
 	domain := a.Name
 	parts := strings.Split(domain, ".")
 
 	for _, label := range parts {
 		if len(label) > 0 {
-			rrBytes = append(rrBytes, byte(len(label)))
-			rrBytes = append(rrBytes, []byte(label)...)
+			rawData = append(rawData, byte(len(label)))
+			rawData = append(rawData, []byte(label)...)
 		}
 	}
-	rrBytes = append(rrBytes, 0x00)
+	rawData = append(rawData, 0x00)
 
-	rrBytes = append(rrBytes, int16ToBytes(uint16(a.Type))...)
-	rrBytes = append(rrBytes, int16ToBytes(uint16(a.Class))...)
+	rawData = append(rawData, int16ToBytes(uint16(a.Type))...)
+	rawData = append(rawData, int16ToBytes(uint16(a.Class))...)
 
 	time := make([]byte, 4)
 	binary.BigEndian.PutUint32(time, a.TTL)
 
-	rrBytes = append(rrBytes, time...)
-	rrBytes = append(rrBytes, int16ToBytes(a.Length)...)
+	rawData = append(rawData, time...)
+	rawData = append(rawData, int16ToBytes(a.Length)...)
 
 	ipBytes, err := net.IPv4(a.Data[0], a.Data[1], a.Data[2], a.Data[3]).MarshalText()
 	if err != nil {
 		return nil
 	}
 
-	rrBytes = append(rrBytes, ipBytes...)
+	rawData = append(rawData, ipBytes...)
 
-	return rrBytes
+	return rawData
 }

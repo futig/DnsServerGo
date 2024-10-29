@@ -19,13 +19,13 @@ type header struct {
 }
 
 type question struct {
-	QName  string
+	QName  *[]byte
 	QType  uint16
 	QClass uint16
 }
 
 type responseData struct {
-	Name       string
+	Name       *[]byte
 	Type       uint16
 	Class      uint16
 	TTL        uint32
@@ -52,6 +52,20 @@ type Address struct {
 	Ip   string
 	Port uint16
 }
+
+type Request struct {
+	Header header
+	Question question
+}
+
+type Response struct {
+	Header header
+	Question question
+	Answers *[]responseData
+	Authorities *[]responseData
+	Additionals *[]responseData
+}
+
 
 func (h header) String() string {
 	return fmt.Sprintf("ID: %v, QR: %v, OPCode: %v, AA: %v, TC: %v, RD: %v, RA: %v, Z: %v, RCode: %v, QDCount: %v, ANCount: %v, NSCount: %v, ARCount: %v",
