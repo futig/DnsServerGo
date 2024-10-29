@@ -38,13 +38,13 @@ func (s *UdpServer) Run() {
 }
 
 func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, rawRequest *[]byte, n int) {
-	header, question, err := parseRequest(rawRequest, n)
-	if err != nil {
-		fmt.Println("Ошибка при обработке DNS запроса:", err)
-	}
+	// header, question, err := parseRequest(rawRequest, n)
+	// if err != nil {
+	// 	fmt.Println("Ошибка при обработке DNS запроса:", err)
+	// }
 
-	fmt.Println(header)
-	fmt.Println(question)
+	// fmt.Println(header)
+	// fmt.Println(question)
 
 	// _, err = conn.WriteToUDP(*response, clientAddr)
 	// if err != nil {

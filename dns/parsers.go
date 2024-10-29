@@ -1,25 +1,23 @@
 package dns
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
-	"net"
 	"strings"
 )
 
-func parseRequest(bufPointer *[]byte, n int) (*Request, error) {
-	header, err := readHeader(bufPointer, n)
+func parseRequest(buf []byte) (*Request, error) {
+	header, err := readHeader(buf)
 	if err != nil {
 		return nil, err
 	}
 	if header.QDCount == 0 || header.QDCount > 1 {
-		return nil, fmt.Errorf("Недопустимое число вопросов")
+		return nil, fmt.Errorf("Недопустимое число вопросов: %w", header.QDCount)
 	}
 	if header.OPCode != 0 {
-		return nil, fmt.Errorf("Недопустимый тип запроса")
+		return nil, fmt.Errorf("Недопустимый тип запроса: %w", header.OPCode)
 	}
-	question, _ := readQuestion(bufPointer, 12)
+	question, _ := readQuestion(buf, 12)
 	request := &Request{
 		Header:   *header,
 		Question: *question,
@@ -27,54 +25,76 @@ func parseRequest(bufPointer *[]byte, n int) (*Request, error) {
 	return request, nil
 }
 
-func parseResponse(bufPointer *[]byte, n int) (*Response, error) {
-	header, err := readHeader(bufPointer, n)
-	answers := make([])
+func parseResponse(buf []byte) (*Response, error) {
+	header, err := readHeader(buf)
 	if err != nil {
 		return nil, err
 	}
-	_, pos := readQuestion(bufPointer, 12)
-	for range header.ANCount {
-		data, ind, err := readResponseData(bufPointer, pos)
-		if err != nil {
-			continue
-		}
-		pos = ind
-		answers = append(answers, data)
+	question, pos := readQuestion(buf, 12)
+
+	parts := [...][]*responseData{
+		make([]*responseData, header.ANCount),
+		make([]*responseData, header.NSCount),
+		make([]*responseData, header.ARCount),
 	}
-	for range header.NSCount {
-		data, ind, err := readResponseData(bufPointer, pos)
-		if err != nil {
-			continue
+
+	for _, values := range parts {
+		n := len(values)
+		values = values[:0]
+		for range n {
+			data, ind, err := readResponseData(buf, pos)
+			if err != nil {
+				continue
+			}
+			pos = ind
+			values = append(values, data)
 		}
-		pos = ind
-		authorities = append(answers, data)
 	}
-	for range header.ARCount {
-		data, ind, err := readResponseData(bufPointer, pos)
-		if err != nil {
-			continue
-		}
-		pos = ind
-		additionals = append(answers, data)
+
+	response := &Response{
+		Header:      *header,
+		Question:    *question,
+		Answers:     parts[0],
+		Authorities: parts[1],
+		Additionals: parts[2],
 	}
-	err = nil
-	return
+	return response, nil
 }
 
-func (r *Request) encode() *[]byte {
-	return
+func (r *Request) encode() []byte {
+	var request []byte
+	var names map[string]uint16
+	request = append(request, r.Header.encode()...)
+	request = append(request, r.Question.encode(12, &names)...)
+	return request
 }
 
-func (r *Response) encode() *[]byte {
-	return
+func (r *Response) encode() []byte {
+	var response []byte
+	var names map[string]uint16
+	response = append(response, r.Header.encode()...)
+	response = append(response, r.Question.encode(len(response), &names)...)
+
+	parts := [...][]*responseData{
+		r.Answers,
+		r.Authorities,
+		r.Additionals,
+	}
+
+	for _, values := range parts {
+		for _, dataPtr := range values {
+			data := *dataPtr
+			response = append(response, data.encode(len(response), &names)...)
+		}
+	}
+	
+	return response
 }
 
-func readHeader(bufPointer *[]byte, n int) (*header, error) {
-	if n < 12 {
+func readHeader(buf []byte) (*header, error) {
+	if len(buf) < 12 {
 		return nil, fmt.Errorf("Заголовок DNS должен состоять из 12 байт")
 	}
-	buf := *bufPointer
 	h := &header{
 		ID:      uint16(buf[0])<<8 | uint16(buf[1]),
 		QR:      uint16(buf[2] >> 7),
@@ -93,25 +113,24 @@ func readHeader(bufPointer *[]byte, n int) (*header, error) {
 	return h, nil
 }
 
-func (h *header) encode() *[]byte {
-	dnsHeader := make([]byte, 12)
+func (h *header) encode() []byte {
+	header := make([]byte, 12)
 
 	var flags uint16 = 0
 	flags = h.QR<<15 | h.OPCode<<11 | h.AA<<10 | h.TC<<9 | h.RD<<8 | h.RA<<7 | h.Z<<4 | h.RCode
 
-	binary.BigEndian.PutUint16(dnsHeader[0:2], h.ID)
-	binary.BigEndian.PutUint16(dnsHeader[2:4], flags)
-	binary.BigEndian.PutUint16(dnsHeader[4:6], h.QDCount)
-	binary.BigEndian.PutUint16(dnsHeader[6:8], h.ANCount)
-	binary.BigEndian.PutUint16(dnsHeader[8:10], h.NSCount)
-	binary.BigEndian.PutUint16(dnsHeader[10:12], h.ARCount)
+	binary.BigEndian.PutUint16(header[0:2], h.ID)
+	binary.BigEndian.PutUint16(header[2:4], flags)
+	binary.BigEndian.PutUint16(header[4:6], h.QDCount)
+	binary.BigEndian.PutUint16(header[6:8], h.ANCount)
+	binary.BigEndian.PutUint16(header[8:10], h.NSCount)
+	binary.BigEndian.PutUint16(header[10:12], h.ARCount)
 
-	return &dnsHeader
+	return header
 }
 
-func readQuestion(bufPointer *[]byte, start int) (*question, int) {
-	buf := *bufPointer
-	questionName, ind := readNameRecord(bufPointer, start)
+func readQuestion(buf []byte, start int) (*question, int) {
+	questionName, ind := readNameRecord(buf, start)
 
 	questionType := binary.BigEndian.Uint16(buf[start : start+2])
 	questionClass := binary.BigEndian.Uint16(buf[start+2 : start+4])
@@ -125,54 +144,37 @@ func readQuestion(bufPointer *[]byte, start int) (*question, int) {
 	return &q, ind + 4
 }
 
-func (q *question) Encode() []byte {
-	domain := q.QName
-	parts := strings.Split(domain, ".")
+func (q *question) encode(start int, namesPtr *map[string]uint16) []byte {
+	var question []byte
+	question = append(question, writeName(q.QName, start, namesPtr)...)
+	question = append(question, uint16ToBytes(q.QType)...)
+	question = append(question, uint16ToBytes(q.QClass)...)
 
-	var buf bytes.Buffer
-
-	for _, label := range parts {
-		if len(label) > 0 {
-			buf.WriteByte(byte(len(label)))
-			buf.WriteString(label)
-		}
-	}
-	buf.WriteByte(0x00)
-	buf.Write(int16ToBytes(uint16(q.QType)))
-	buf.Write(int16ToBytes(uint16(q.QClass)))
-
-	return buf.Bytes()
+	return question
 }
 
-func int16ToBytes(u uint16) []byte {
-	bytes := make([]byte, 2)
-	bytes[0] = byte(u >> 8)
-	bytes[1] = byte((u << 8) >> 8)
-	return bytes
-}
-
-func readResponseData(bufPointer *[]byte, start int) (*responseData, int, error) {
-	buf := *bufPointer
-	name, ind := readNameRecord(bufPointer, start)
+func readResponseData(buf []byte, start int) (*responseData, int, error) {
+	name, ind := readNameRecord(buf, start)
 
 	rType := binary.BigEndian.Uint16(buf[ind : ind+2])
-	rClass := binary.BigEndian.Uint16(buf[ind+2 : ind+4])
-	timeToLive := binary.BigEndian.Uint32(buf[ind+4 : ind+8])
-	dataLength := binary.BigEndian.Uint32(buf[ind+8 : ind+10])
 	if _, ok := types[rType]; !ok {
 		return nil, 0, fmt.Errorf("Недопустимый тип записи: %d", rType)
 	}
 
-	var data *[]byte
+	rClass := binary.BigEndian.Uint16(buf[ind+2 : ind+4])
+	timeToLive := binary.BigEndian.Uint32(buf[ind+4 : ind+8])
+	dataLength := binary.BigEndian.Uint16(buf[ind+8 : ind+10])
+
+	var data []byte
 	switch types[rType] {
 	case "A":
-		data, ind = readIpv4(bufPointer, ind+10)
+		data, ind = readIpv4(buf, ind+10)
 	case "AAAA":
-		data, ind = readIpv6(bufPointer, ind+10)
+		data, ind = readIpv6(buf, ind+10)
 	case "MX":
-		data, ind = readMxRecord(bufPointer, ind+10)
+		data, ind = readMxRecord(buf, ind+10)
 	case "NS", "CNAME":
-		data, ind = readNameRecord(bufPointer, ind+10)
+		data, ind = readNameRecord(buf, ind+10)
 	}
 
 	d := responseData{
@@ -187,62 +189,106 @@ func readResponseData(bufPointer *[]byte, start int) (*responseData, int, error)
 	return &d, ind, nil
 }
 
-func readIpv4(bufPointer *[]byte, start int) (*[]byte, int) {
-	buf := *bufPointer
-	ip := buf[start : start+4]
-	return &ip, start + 4
+func (r *responseData) encode(start int, namesPtr *map[string]uint16) []byte {
+	var response []byte
+
+	response = append(response, writeName(r.Name, start, namesPtr)...)
+	response = append(response, uint16ToBytes(r.Type)...)
+	response = append(response, uint16ToBytes(r.Class)...)
+
+	time := make([]byte, 4)
+	binary.BigEndian.PutUint32(time, r.TTL)
+
+	response = append(response, time...)
+	response = append(response, uint16ToBytes(r.DataLength)...)
+
+	switch types[r.Type] {
+	case "A", "AAAA":
+		response = append(response, r.Data...)
+	case "MX":
+		response = append(response, r.Data[:2]...)
+		response = append(response, writeName(r.Data[2:], start+len(response), namesPtr)...)
+	case "NS", "CNAME":
+		response = append(response, writeName(r.Data, start+len(response), namesPtr)...)
+	}
+
+	return response
 }
 
-func readIpv6(bufPointer *[]byte, start int) (*[]byte, int) {
-	buf := *bufPointer
-	ip := buf[start : start+16]
-	return &ip, start + 16
+func writeName(name []byte, start int, namesPtr *map[string]uint16) []byte {
+	names := *namesPtr
+	var data []byte
+	noLinks := true
+	for len(name) > 0 {
+		nameKey := parseNameRecord(name)
+		if address, ok := names[nameKey]; ok {
+			bytesPos := uint16ToBytes(address)
+			data = append(data, byte(3)<<6|bytesPos[0])
+			data = append(data, bytesPos[1])
+			noLinks = false
+			break
+		} else {
+			length := int(name[0])
+			data = append(data, name[0])
+			data = append(data, name[:length]...)
+			names[nameKey] = uint16(start)
+			start += length + 1
+			name = name[length+1:]
+		}
+	}
+	if noLinks {
+		data = append(data, 0x00)
+	}
+	return data
 }
 
-func readMxRecord(bufPointer *[]byte, start int) (*[]byte, int) {
-	buf := *bufPointer
+func readIpv4(buf []byte, start int) ([]byte, int) {
+	return buf[start : start+4], start + 4
+}
+
+func readIpv6(buf []byte, start int) ([]byte, int) {
+	return buf[start : start+16], start + 16
+}
+
+func readMxRecord(buf []byte, start int) ([]byte, int) {
+	var data []byte
+	data = append(data, buf[start:start+2]...)
+	name, ind := readNameRecord(buf, start+2)
+	data = append(data, name...)
+	return data, ind
+}
+
+func readNameRecord(buf []byte, pos int) ([]byte, int) {
 	var record []byte
-	record = append(record, buf[start:start+2]...)
-	name, ind := readNameRecord(bufPointer, start+2)
-	record = append(record, *name...)
-	return &record, ind
-}
-
-func readNameRecord(bufPointer *[]byte, pos int) (*[]byte, int) {
-	buf := *bufPointer
-	var record []byte
-	var old int = 0
+	var old int = -1
 	for {
-		if mark := uint16(buf[pos] >> 6); mark != 0 {
-			if old == 0 {
+		if mark := buf[pos] >> 6; mark != 0 {
+			if old == -1 {
 				old = pos + 2
 			}
-			pos = int((buf[pos]<<2)>>2)<<8 | int(buf[pos+1])
+			pos = int(buf[pos]<<2)<<6 | int(buf[pos+1])
 			continue
 		}
-		lengthByte := (buf[pos] << 2) >> 2
-		length := int(lengthByte)
+		length := int((buf[pos] << 2) >> 2)
 		if length == 0 {
 			break
 		}
 		pos++
-		record = append(record, lengthByte)
+		record = append(record, byte(length))
 		record = append(record, buf[pos:pos+length]...)
 		pos += length
 	}
 	var nextPos int
-	if old != 0 {
+	if old != -1 {
 		nextPos = old
 	} else {
 		nextPos = pos + 1
 	}
 
-	return &record, nextPos
+	return record, nextPos
 }
 
-func parseIpv4(bufPointer *[]byte) string {
-
-	buf := *bufPointer
+func parseIpv4(buf []byte) string {
 	res := make([]string, 4)
 	for i, el := range buf {
 		res[i] = string(el)
@@ -250,8 +296,7 @@ func parseIpv4(bufPointer *[]byte) string {
 	return strings.Join(res, ".")
 }
 
-func parseIpv6(bufPointer *[]byte) string {
-	buf := *bufPointer
+func parseIpv6(buf []byte) string {
 	res := make([]string, 8)
 	for i := 0; i < 16; i += 2 {
 		part := uint16(buf[i])<<8 | uint16(buf[i+1])
@@ -260,16 +305,14 @@ func parseIpv6(bufPointer *[]byte) string {
 	return strings.Join(res, ".")
 }
 
-func parseMxRecord(bufPointer *[]byte) (int, string) {
-	buf := *bufPointer
+func parseMxRecord(buf []byte) (int, string) {
 	priority := uint16(buf[0])<<8 | uint16(buf[1])
 	bufName := buf[2:]
-	name := parseNameRecord(&bufName)
+	name := parseNameRecord(bufName)
 	return int(priority), name
 }
 
-func parseNameRecord(bufPointer *[]byte) string {
-	buf := *bufPointer
+func parseNameRecord(buf []byte) string {
 	var nameParts []string
 	pos := 0
 	for pos < len(buf) {
@@ -280,35 +323,9 @@ func parseNameRecord(bufPointer *[]byte) string {
 	return strings.Join(nameParts, ".")
 }
 
-func (a *responseData) Encode() []byte {
-	var rawData []byte
-
-	domain := a.Name
-	parts := strings.Split(domain, ".")
-
-	for _, label := range parts {
-		if len(label) > 0 {
-			rawData = append(rawData, byte(len(label)))
-			rawData = append(rawData, []byte(label)...)
-		}
-	}
-	rawData = append(rawData, 0x00)
-
-	rawData = append(rawData, int16ToBytes(uint16(a.Type))...)
-	rawData = append(rawData, int16ToBytes(uint16(a.Class))...)
-
-	time := make([]byte, 4)
-	binary.BigEndian.PutUint32(time, a.TTL)
-
-	rawData = append(rawData, time...)
-	rawData = append(rawData, int16ToBytes(a.Length)...)
-
-	ipBytes, err := net.IPv4(a.Data[0], a.Data[1], a.Data[2], a.Data[3]).MarshalText()
-	if err != nil {
-		return nil
-	}
-
-	rawData = append(rawData, ipBytes...)
-
-	return rawData
+func uint16ToBytes(u uint16) []byte {
+	bytes := make([]byte, 2)
+	bytes[0] = byte(u >> 8)
+	bytes[1] = byte((u << 8) >> 8)
+	return bytes
 }

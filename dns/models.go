@@ -19,18 +19,18 @@ type header struct {
 }
 
 type question struct {
-	QName  *[]byte
+	QName  []byte
 	QType  uint16
 	QClass uint16
 }
 
 type responseData struct {
-	Name       *[]byte
+	Name       []byte
 	Type       uint16
 	Class      uint16
 	TTL        uint32
-	DataLength uint32
-	Data       *[]byte
+	DataLength uint16
+	Data       []byte
 }
 
 var classes = map[uint16]string{
@@ -61,9 +61,9 @@ type Request struct {
 type Response struct {
 	Header header
 	Question question
-	Answers *[]responseData
-	Authorities *[]responseData
-	Additionals *[]responseData
+	Answers []*responseData
+	Authorities []*responseData
+	Additionals []*responseData
 }
 
 
