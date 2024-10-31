@@ -20,26 +20,6 @@ func main() {
 	// 	return
 	// }
 
-	// conn, err := net.Dial("udp", addr)
-	// if err != nil {
-	// 	fmt.Println("Ошибка при подключении:", err)
-	// 	return
-	// }
-	// defer conn.Close()
-
-	// _, err = conn.Write(binaryData)
-	// if err != nil {
-	// 	fmt.Println("Ошибка при отправке:", err)
-	// 	return
-	// }
-
-	// buffer := make([]byte, 1024)
-
-	// n, err := conn.Read(buffer)
-	// if err != nil {
-	// 	fmt.Println("Ошибка при получении ответа:", err)
-	// 	return
-	// }
-
+	
 	// fmt.Printf("Получен ответ: %x\n", buffer[:n])
 }

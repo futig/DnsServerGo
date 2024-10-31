@@ -63,7 +63,7 @@ func parseResponse(buf []byte) (*Response, error) {
 
 func (r *Request) encode() []byte {
 	var request []byte
-	var names map[string]uint16
+	names := make(map[string]uint16)
 	request = append(request, r.Header.encode()...)
 	request = append(request, r.Question.encode(12, &names)...)
 	return request
@@ -71,7 +71,7 @@ func (r *Request) encode() []byte {
 
 func (r *Response) encode() []byte {
 	var response []byte
-	var names map[string]uint16
+	names := make(map[string]uint16)
 	response = append(response, r.Header.encode()...)
 	response = append(response, r.Question.encode(len(response), &names)...)
 
@@ -87,7 +87,7 @@ func (r *Response) encode() []byte {
 			response = append(response, data.encode(len(response), &names)...)
 		}
 	}
-	
+
 	return response
 }
 
@@ -132,8 +132,8 @@ func (h *header) encode() []byte {
 func readQuestion(buf []byte, start int) (*question, int) {
 	questionName, ind := readNameRecord(buf, start)
 
-	questionType := binary.BigEndian.Uint16(buf[start : start+2])
-	questionClass := binary.BigEndian.Uint16(buf[start+2 : start+4])
+	questionType := binary.BigEndian.Uint16(buf[ind : ind+2])
+	questionClass := binary.BigEndian.Uint16(buf[ind+2 : ind+4])
 
 	q := question{
 		QName:  questionName,
@@ -229,8 +229,7 @@ func writeName(name []byte, start int, namesPtr *map[string]uint16) []byte {
 			break
 		} else {
 			length := int(name[0])
-			data = append(data, name[0])
-			data = append(data, name[:length]...)
+			data = append(data, name[:length + 1]...)
 			names[nameKey] = uint16(start)
 			start += length + 1
 			name = name[length+1:]
@@ -305,11 +304,10 @@ func parseIpv6(buf []byte) string {
 	return strings.Join(res, ".")
 }
 
-func parseMxRecord(buf []byte) (int, string) {
-	priority := uint16(buf[0])<<8 | uint16(buf[1])
+func parseMxRecord(buf []byte) string {
 	bufName := buf[2:]
 	name := parseNameRecord(bufName)
-	return int(priority), name
+	return name
 }
 
 func parseNameRecord(buf []byte) string {
@@ -317,8 +315,8 @@ func parseNameRecord(buf []byte) string {
 	pos := 0
 	for pos < len(buf) {
 		length := int(buf[pos])
-		nameParts = append(nameParts, string(buf[pos:pos+length]))
-		pos += length
+		nameParts = append(nameParts, string(buf[pos+1:pos+length+1]))
+		pos += length + 1
 	}
 	return strings.Join(nameParts, ".")
 }
@@ -328,4 +326,18 @@ func uint16ToBytes(u uint16) []byte {
 	bytes[0] = byte(u >> 8)
 	bytes[1] = byte((u << 8) >> 8)
 	return bytes
+}
+
+func dataToString(t string, data []byte) (string, error) {
+	switch t {
+	case "A":
+		return parseIpv4(data), nil
+	case "AAAA":
+		return parseIpv6(data), nil
+	case "MX":
+		return parseMxRecord(data), nil
+	case "CNAME", "NS":
+		return parseNameRecord(data), nil
+	}
+	return "", nil
 }

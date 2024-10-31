@@ -1,6 +1,6 @@
 package dns
 
-var rootServersIPs = [...]string{
+var rootServersIPs = []string{
 	"198.41.0.4",
 	"170.247.170.2",
 	"192.33.4.12",

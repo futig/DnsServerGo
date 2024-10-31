@@ -73,10 +73,10 @@ func (h header) String() string {
 }
 
 func (q question) String() string {
-	return fmt.Sprintf("Name: %v, QType: %v, QClass: %v", q.QName, q.QType, q.QClass)
+	return fmt.Sprintf("Name: %v, QType: %v, QClass: %v", parseNameRecord(q.QName), q.QType, q.QClass)
 }
 
 func (a responseData) String() string {
 	return fmt.Sprintf("Name: %v, Type: %v, Class: %v, TTL: %v, DataLength: %v, Data: %v",
-		a.Name, a.Type, a.Class, a.TTL, a.DataLength, a.Data)
+		parseNameRecord(a.Name), a.Type, a.Class, a.TTL, a.DataLength, a.Data)
 }
