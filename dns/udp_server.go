@@ -102,20 +102,20 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, rawRequest 
 func AskServerUDP(addr string, data []byte) ([]byte, error) {
 	conn, err := net.Dial("udp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("Ошибка при подключении: %w", err)
+		return nil, fmt.Errorf("ошибка при подключении: %w", err)
 	}
 	defer conn.Close()
 
 	_, err = conn.Write(data)
 	if err != nil {
-		return nil, fmt.Errorf("Ошибка при отправке: %w", err)
+		return nil, fmt.Errorf("ошибка при отправке: %w", err)
 	}
 
 	buffer := make([]byte, 1024)
 
 	n, err := conn.Read(buffer)
 	if err != nil {
-		return nil, fmt.Errorf("Ошибка при получении ответа: %w", err)
+		return nil, fmt.Errorf("ошибка при получении ответа: %w", err)
 	}
 
 	return buffer[:n], nil

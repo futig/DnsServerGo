@@ -12,10 +12,10 @@ func parseRequest(buf []byte) (*Request, error) {
 		return nil, err
 	}
 	if header.QDCount == 0 || header.QDCount > 1 {
-		return nil, fmt.Errorf("Недопустимое число вопросов: %w", header.QDCount)
+		return nil, fmt.Errorf("недопустимое число вопросов: %v", header.QDCount)
 	}
 	if header.OPCode != 0 {
-		return nil, fmt.Errorf("Недопустимый тип запроса: %w", header.OPCode)
+		return nil, fmt.Errorf("недопустимый тип запроса: %v", header.OPCode)
 	}
 	question, _ := readQuestion(buf, 12)
 	request := &Request{
@@ -93,7 +93,7 @@ func (r *Response) encode() []byte {
 
 func readHeader(buf []byte) (*header, error) {
 	if len(buf) < 12 {
-		return nil, fmt.Errorf("Заголовок DNS должен состоять из 12 байт")
+		return nil, fmt.Errorf("заголовок DNS должен состоять из 12 байт")
 	}
 	h := &header{
 		ID:      uint16(buf[0])<<8 | uint16(buf[1]),
@@ -158,7 +158,7 @@ func readResponseData(buf []byte, start int) (*responseData, int, error) {
 
 	rType := binary.BigEndian.Uint16(buf[ind : ind+2])
 	if _, ok := types[rType]; !ok {
-		return nil, 0, fmt.Errorf("Недопустимый тип записи: %d", rType)
+		return nil, 0, fmt.Errorf("недопустимый тип записи: %d", rType)
 	}
 
 	rClass := binary.BigEndian.Uint16(buf[ind+2 : ind+4])
