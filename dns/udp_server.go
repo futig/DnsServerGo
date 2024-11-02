@@ -1,9 +1,10 @@
 package dns
 
 import (
+	ut "dnsServer/utils"
 	"fmt"
 	"net"
-	ut "dnsServer/utils"
+	"time"
 )
 
 type UdpServer struct {
@@ -73,8 +74,8 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr,
 	conn.WriteToUDP(rawResponse, clientAddr)
 
 	response.Header.AA = 0
-	cache.Put(requestName, request.Question.QType, response.encode())
-	fmt.Print(cache)
+	newTime := time.Now().Add(time.Duration(response.Answers[0].TTL) * time.Second)
+	cache.Put(requestName, request.Question.QType, newTime, response.encode())
 }
 
 
