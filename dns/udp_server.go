@@ -8,14 +8,14 @@ import (
 )
 
 type UdpServer struct {
-	Address  Address
-	Cache *ut.Cache
+	Address Address
+	Cache   *Cache
 }
 
 func MakeUdpServer(addr Address, cashSize int) *UdpServer {
 	return &UdpServer{
 		Address: addr,
-		Cache: ut.NewCache(cashSize),
+		Cache:   NewCache(cashSize),
 	}
 }
 
@@ -42,23 +42,26 @@ func (s *UdpServer) Run() {
 	}
 }
 
-func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, 
-	rawRequest []byte, cache *ut.Cache) {
+func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr,
+	rawRequest []byte, cache *Cache) {
 	request, err := parseRequest(rawRequest)
 	if err != nil {
 		fmt.Println("Ошибка при обработке DNS запроса:", err)
 		return
 	}
 	requestName := parseNameRecord(request.Question.QName)
-	if cachedAnswer, ok := cache.Get(requestName, request.Question.QType); ok {
-		conn.WriteToUDP(cachedAnswer, clientAddr)
+	if cachedResponse, ok := cache.Get(requestName, request.Question.QType); ok {
+		cachedResponse.Header.AA = 0
+		cachedResponse.Header.ID = request.Header.ID
+		conn.WriteToUDP(cachedResponse.encode(), clientAddr)
+		return
 	}
 
 	rawResponse, response := getAnswer(rawRequest)
 
-	if rawResponse == nil {	
+	if rawResponse == nil {
 		response := Response{
-			Header: request.Header,
+			Header:   request.Header,
 			Question: request.Question,
 		}
 		response.Header.QR = 1
@@ -73,15 +76,13 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr,
 
 	conn.WriteToUDP(rawResponse, clientAddr)
 
-	response.Header.AA = 0
 	newTime := time.Now().Add(time.Duration(response.Answers[0].TTL) * time.Second)
-	cache.Put(requestName, request.Question.QType, newTime, response.encode())
+	cache.Put(requestName, request.Question.QType, newTime, response)
 }
-
 
 func getAnswer(rawRequest []byte) ([]byte, *Response) {
 	stackIPs := make(ut.Stack[string], 0)
-	stackIPs  = stackIPs.PushRange(rootServersIPs)
+	stackIPs = stackIPs.PushRange(rootServersIPs)
 	curIp := ""
 	for !stackIPs.IsEmpty() {
 		stackIPs, curIp, _ = stackIPs.Pop()
@@ -91,10 +92,10 @@ func getAnswer(rawRequest []byte) ([]byte, *Response) {
 			continue
 		}
 		response, err := parseResponse(rawResponse)
-		if err != nil{
+		if err != nil {
 			continue
 		}
-		
+
 		if len(response.Answers) > 0 {
 			return rawResponse, response
 		} else if len(response.Authorities) > 0 {
@@ -109,7 +110,6 @@ func getAnswer(rawRequest []byte) ([]byte, *Response) {
 	}
 	return nil, nil
 }
-
 
 func askServerUDP(addr string, data []byte) ([]byte, error) {
 	conn, err := net.Dial("udp", addr)

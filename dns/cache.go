@@ -1,32 +1,33 @@
-package utils
+package dns
 
 import (
+	ut "dnsServer/utils"
 	"fmt"
 	"sync"
 	"time"
 )
 
 type RequestAnswer struct {
-	Expire    time.Time
+	Expire time.Time
 	R      bool
-	Answer []byte
+	Answer *Response
 }
 
 type Cache struct {
 	Size  int
-	queue Queue[string]
+	queue ut.Queue[string]
 	names map[string]*RequestAnswer
 }
 
 func NewCache(size int) *Cache {
 	return &Cache{
 		Size:  size,
-		queue: make(Queue[string], 0),
+		queue: make(ut.Queue[string], 0),
 		names: make(map[string]*RequestAnswer, 0),
 	}
 }
 
-func (c *Cache) Get(name string, rType uint16) ([]byte, bool) {
+func (c *Cache) Get(name string, rType uint16) (*Response, bool) {
 	key := createIdentityKey(name, rType)
 	var m sync.Mutex
 	m.Lock()
@@ -44,7 +45,7 @@ func createIdentityKey(name string, rType uint16) string {
 	return fmt.Sprintf("%s:%d", name, rType)
 }
 
-func (c *Cache) Put(name string, rType uint16, expire time.Time, answer []byte) {
+func (c *Cache) Put(name string, rType uint16, expire time.Time, response *Response) {
 	var m sync.Mutex
 	m.Lock()
 	defer m.Unlock()
@@ -56,7 +57,7 @@ func (c *Cache) Put(name string, rType uint16, expire time.Time, answer []byte) 
 		c.queue = queue
 		requestAnswer := c.names[identityKey]
 		elapsed := time.Since(requestAnswer.Expire).Seconds()
-		if requestAnswer.R && elapsed < 0{
+		if requestAnswer.R && elapsed < 0 {
 			requestAnswer.R = false
 			c.queue = c.queue.Enqueue(identityKey)
 		} else {
@@ -64,10 +65,10 @@ func (c *Cache) Put(name string, rType uint16, expire time.Time, answer []byte) 
 		}
 	}
 	identityKey := createIdentityKey(name, rType)
-	
+
 	requestAnswer := RequestAnswer{
 		Expire: expire,
-		Answer: answer,
+		Answer: response,
 		R:      true,
 	}
 	c.names[identityKey] = &requestAnswer
