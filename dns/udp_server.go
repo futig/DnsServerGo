@@ -59,9 +59,6 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr,
 		response := Response{
 			Header: request.Header,
 			Question: request.Question,
-			Answers: make([]*responseData, 0),
-			Authorities: make([]*responseData, 0),
-			Additionals: make([]*responseData, 0),
 		}
 		response.Header.QR = 1
 		response.Header.RCode = 1

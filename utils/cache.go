@@ -12,30 +12,25 @@ type RequestAnswer struct {
 	Answer []byte
 }
 
-type identityKey struct {
-	Name  string
-	RType uint16
-}
-
 type Cache struct {
 	Size  int
-	queue Queue[identityKey]
-	names map[identityKey]*RequestAnswer
-	rw *sync.RWMutex
+	queue Queue[string]
+	names map[string]*RequestAnswer
 }
 
 func NewCache(size int) *Cache{
 	return &Cache{
 		Size: size,
-		queue: make(Queue[identityKey],0),
-		names: make(map[identityKey]*RequestAnswer, 0),
+		queue: make(Queue[string],0),
+		names: make(map[string]*RequestAnswer, 0),
 	}
 }
 
 func (c *Cache) Get(name string, rType uint16) ([]byte, bool) {
 	key := createIdentityKey(name, rType)
-	c.rw.Lock()
-	defer c.rw.Unlock()
+	var rw sync.RWMutex
+	rw.Lock()
+	defer rw.Unlock()
 	if answer, ok := c.names[key]; ok {
 		answer.R = true
 		return answer.Answer, true
@@ -43,16 +38,14 @@ func (c *Cache) Get(name string, rType uint16) ([]byte, bool) {
 	return nil, false
 }
 
-func createIdentityKey(name string, rType uint16) identityKey {
-	return identityKey{
-		Name:  name,
-		RType: rType,
-	}
+func createIdentityKey(name string, rType uint16) string {
+	return fmt.Sprintf("%s:%d", name, rType)
 }
 
 func (c *Cache) Put(name string, rType uint16, answer []byte) {
-	c.rw.Lock()
-	defer c.rw.Unlock()
+	var rw sync.RWMutex
+	rw.Lock()
+	defer rw.Unlock()
 	for len(c.queue) == c.Size {
 		queue, identityKey, err := c.queue.Dequeue()
 		if err != nil {
@@ -79,5 +72,5 @@ func (c *Cache) Put(name string, rType uint16, answer []byte) {
 }
 
 func (h Cache) String() string {
-	return fmt.Sprint("%v", len(h.queue))
+	return fmt.Sprintf("%v", len(h.queue))
 }

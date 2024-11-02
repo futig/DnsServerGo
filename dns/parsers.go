@@ -38,18 +38,22 @@ func parseResponse(buf []byte) (*Response, error) {
 		make([]*responseData, header.ARCount),
 	}
 
-	for _, values := range parts {
-		n := len(values)
-		values = values[:0]
+	for i := range parts {
+		n := len(parts[i])
+		parts[i] = parts[i][:0]
 		for range n {
 			data, ind, err := readResponseData(buf, pos)
 			if err != nil {
 				continue
 			}
 			pos = ind
-			values = append(values, data)
+			parts[i] = append(parts[i], data)
 		}
 	}
+
+	header.ANCount = uint16(len(parts[0]))
+	header.NSCount = uint16(len(parts[1]))
+	header.ARCount = uint16(len(parts[2]))
 
 	response := &Response{
 		Header:      *header,
@@ -82,8 +86,10 @@ func (r *Response) encode() []byte {
 	}
 
 	for _, values := range parts {
-		for _, dataPtr := range values {
-			data := *dataPtr
+		if values == nil {
+			continue
+		}
+		for _, data := range values {
 			response = append(response, data.encode(len(response), &names)...)
 		}
 	}
