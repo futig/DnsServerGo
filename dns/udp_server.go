@@ -8,11 +8,14 @@ import (
 
 type UdpServer struct {
 	Address  Address
-	CachSize int
+	Cache *ut.Cache
 }
 
 func MakeUdpServer(addr Address, cashSize int) *UdpServer {
-	return &UdpServer{addr, cashSize}
+	return &UdpServer{
+		Address: addr,
+		Cache: ut.NewCache(cashSize),
+	}
 }
 
 func (s *UdpServer) Run() {
@@ -34,48 +37,25 @@ func (s *UdpServer) Run() {
 			fmt.Println("Ошибка при чтении данных:", err)
 			continue
 		}
-		handleUDPConnection(conn, clientAddr, buf[:n])
+		handleUDPConnection(conn, clientAddr, buf[:n], s.Cache)
 	}
 }
 
-func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, rawRequest []byte) {
+func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, 
+	rawRequest []byte, cache *ut.Cache) {
 	request, err := parseRequest(rawRequest)
 	if err != nil {
 		fmt.Println("Ошибка при обработке DNS запроса:", err)
 		return
 	}
-
-	stackIPs := make(ut.Stack[string], 0)
-	stackIPs  = stackIPs.PushRange(rootServersIPs)
-	curIp := ""
-	var answerResponse []byte
-	for !stackIPs.IsEmpty() {
-		stackIPs, curIp, _ = stackIPs.Pop()
-		addr := fmt.Sprintf("%v:53", curIp)
-		rawResponse, err := AskServerUDP(addr, rawRequest)
-		if err != nil {
-			continue
-		}
-		response, err := parseResponse(rawResponse)
-		if err != nil{
-			continue
-		}
-		
-		if len(response.Answers) > 0 {
-			answerResponse = rawResponse
-			break
-		} else if len(response.Authorities) > 0 {
-			for _, a := range response.Authorities {
-				name, err := dataToString(types[a.Type], a.Data)
-				if err != nil {
-					continue
-				}
-				stackIPs = stackIPs.Push(name)
-			}
-		}
+	requestName := parseNameRecord(request.Question.QName)
+	if cachedAnswer, ok := cache.Get(requestName, request.Question.QType); ok {
+		conn.WriteToUDP(cachedAnswer, clientAddr)
 	}
 
-	if answerResponse == nil {	
+	rawResponse, response := getAnswer(rawRequest)
+
+	if rawResponse == nil {	
 		response := Response{
 			Header: request.Header,
 			Question: request.Question,
@@ -93,11 +73,47 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, rawRequest 
 		return
 	}
 
-	conn.WriteToUDP(answerResponse, clientAddr)
+	conn.WriteToUDP(rawResponse, clientAddr)
+
+	response.Header.AA = 0
+	cache.Put(requestName, request.Question.QType, response.encode())
+	fmt.Print(cache)
 }
 
 
-func AskServerUDP(addr string, data []byte) ([]byte, error) {
+func getAnswer(rawRequest []byte) ([]byte, *Response) {
+	stackIPs := make(ut.Stack[string], 0)
+	stackIPs  = stackIPs.PushRange(rootServersIPs)
+	curIp := ""
+	for !stackIPs.IsEmpty() {
+		stackIPs, curIp, _ = stackIPs.Pop()
+		addr := fmt.Sprintf("%v:53", curIp)
+		rawResponse, err := askServerUDP(addr, rawRequest)
+		if err != nil {
+			continue
+		}
+		response, err := parseResponse(rawResponse)
+		if err != nil{
+			continue
+		}
+		
+		if len(response.Answers) > 0 {
+			return rawResponse, response
+		} else if len(response.Authorities) > 0 {
+			for _, a := range response.Authorities {
+				name, err := dataToString(types[a.Type], a.Data)
+				if err != nil {
+					continue
+				}
+				stackIPs = stackIPs.Push(name)
+			}
+		}
+	}
+	return nil, nil
+}
+
+
+func askServerUDP(addr string, data []byte) ([]byte, error) {
 	conn, err := net.Dial("udp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при подключении: %w", err)
