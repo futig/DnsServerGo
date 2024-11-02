@@ -7,5 +7,6 @@ import (
 
 func main() {
 	udpServer := dns.MakeUdpServer(dns.Address{Ip: "127.0.0.1", Port: 2053}, 10)
-	udpServer.Run()
+	go udpServer.Run()
+	select {}
 }

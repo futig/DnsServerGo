@@ -38,7 +38,7 @@ func (s *UdpServer) Run() {
 			fmt.Println("Ошибка при чтении данных:", err)
 			continue
 		}
-		handleUDPConnection(conn, clientAddr, buf[:n], s.Cache)
+		go handleUDPConnection(conn, clientAddr, buf[:n], s.Cache)
 	}
 }
 
