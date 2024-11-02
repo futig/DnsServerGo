@@ -45,7 +45,7 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, rawRequest 
 		return
 	}
 
-	stackIPs := make(ut.Stack, 0)
+	stackIPs := make(ut.Stack[string], 0)
 	stackIPs  = stackIPs.PushRange(rootServersIPs)
 	curIp := ""
 	var answerResponse []byte
