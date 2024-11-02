@@ -52,12 +52,10 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr, rawRequest 
 	for !stackIPs.IsEmpty() {
 		stackIPs, curIp, _ = stackIPs.Pop()
 		addr := fmt.Sprintf("%v:53", curIp)
-		fmt.Print(addr)
 		rawResponse, err := AskServerUDP(addr, rawRequest)
 		if err != nil {
 			continue
 		}
-		fmt.Print(rawResponse)
 		response, err := parseResponse(rawResponse)
 		if err != nil{
 			continue
