@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	ut "dnsServer/utils"
 	"fmt"
 	"net"
@@ -57,9 +58,11 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr,
 		return
 	}
 
-	rawResponse, response := getAnswer(rawRequest)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-	if rawResponse == nil {
+	rawResponse, response, err := getAnswer(ctx, rawRequest)
+	if err != nil {
 		response := Response{
 			Header:   request.Header,
 			Question: request.Question,
@@ -80,14 +83,20 @@ func handleUDPConnection(conn *net.UDPConn, clientAddr *net.UDPAddr,
 	cache.Put(requestName, request.Question.QType, newTime, response)
 }
 
-func getAnswer(rawRequest []byte) ([]byte, *Response) {
+func getAnswer(ctx context.Context, rawRequest []byte) ([]byte, *Response, error) {
 	stackIPs := make(ut.Stack[string], 0)
 	stackIPs = stackIPs.PushRange(rootServersIPs)
 	curIp := ""
 	for !stackIPs.IsEmpty() {
+		select {
+		case <-ctx.Done():
+			return nil, nil, fmt.Errorf("произошел таймаут при чтении данных")
+		default:
+		}
+
 		stackIPs, curIp, _ = stackIPs.Pop()
 		addr := fmt.Sprintf("%v:53", curIp)
-		rawResponse, err := askServerUDP(addr, rawRequest)
+		rawResponse, err := askServerUDP(ctx, addr, rawRequest)
 		if err != nil {
 			continue
 		}
@@ -97,7 +106,7 @@ func getAnswer(rawRequest []byte) ([]byte, *Response) {
 		}
 
 		if len(response.Answers) > 0 {
-			return rawResponse, response
+			return rawResponse, response, nil
 		} else if len(response.Authorities) > 0 {
 			for _, a := range response.Authorities {
 				name, err := dataToString(types[a.Type], a.Data)
@@ -108,15 +117,20 @@ func getAnswer(rawRequest []byte) ([]byte, *Response) {
 			}
 		}
 	}
-	return nil, nil
+	return nil, nil, fmt.Errorf("не удалось зарезолвить адрес")
 }
 
-func askServerUDP(addr string, data []byte) ([]byte, error) {
-	conn, err := net.Dial("udp", addr)
+func askServerUDP(ctx context.Context, addr string, data []byte) ([]byte, error) {
+	dialer := net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "udp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при подключении: %w", err)
 	}
 	defer conn.Close()
+
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
 
 	_, err = conn.Write(data)
 	if err != nil {
